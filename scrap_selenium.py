@@ -1,99 +1,37 @@
-import logging
-from selenium.webdriver.remote.remote_connection import LOGGER
 from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
-from bs4 import BeautifulSoup
-
-"""
-On désactive les logs de Selenium
-"""
-
-LOGGER.setLevel(logging.WARNING)
-
-"""
-Setup the Selenium WebDriver
-"""
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 def setup_driver():
-    options = Options()
-    options.add_argument('--headless')  # Run in headless mode
-    options.add_argument('--disable-gpu')
-    options.add_argument('--no-sandbox')
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")  # Run headless Chrome
+    service = ChromeService(executable_path='/path/to/chromedriver')  # Update path to your chromedriver
+    driver = webdriver.Chrome(service=service, options=chrome_options)
     return driver
-
-"""
-Méthode pour vérifier si la requête a réussi ou non
-"""
 
 def fetch_page(driver, url):
     driver.get(url)
+    # Wait for the page to load and for the questions to be visible
+    WebDriverWait(driver, 10).until(
+        EC.presence_of_element_located((By.CLASS_NAME, 's-post-summary'))
+    )
     return driver.page_source
 
-"""
-Méthode pour récupérer le nombre de pages à scraper
-"""
-
-def get_number_of_pages(driver):
-    soup = BeautifulSoup(driver.page_source, 'html.parser')
-    pages = soup.find_all('a', class_='s-pagination--item')
-    if pages:
-        return int(pages[-2].text.strip())
-    return 1
-
-"""
-Méthode pour récupérer les questions de la page ainsi que les autres données nécessaires
-"""
-
-def get_questions_from_page(soup):
+def get_questions_from_page(driver):
     questions = []
-    """
-    Ici on va identifier l'emplacement des question dans le code html de la page
-    """
-
-    for question in soup.find_all('div', class_='s-post-summary'):
-        """
-        On récupère tout d'abord le titre de la question
-        """
-
-        title = question.find('h3', class_='s-post-summary--content-title')
-        title = title.text.strip() if title else None
-        """
-        On récupère le lien de la question
-        """
-
-        link = question.find('h3').find('a')
-        link = "https://stackoverflow.com" + link['href'] if link else None
-        """
-        On récupère le résumé de la question
-        """
-
-        summary = question.find('div', class_='s-post-summary--content-excerpt')
-        summary = summary.text.strip() if summary else None
-        """
-        On récupère les tags de la question
-        """
-
-        tags = [tag.text for tag in question.find_all('a', class_='post-tag')] or None
-        """
-        On récupère l'auteur de la question
-        """
-
-        author_element = question.select_one('div.s-user-card__minimal div.s-user-card--info div.s-user-card--link a')
-        author = author_element.text.strip() if author_element else None
-        """
-        On récupère la date de la question
-        """
-
-        date = question.find('span', class_='relativetime')
-        date = date['title'] if date else None
-        """
-        On ajoute les données récupérées dans un dictionnaire au format json
-        """
-
+    post_summaries = driver.find_elements(By.CLASS_NAME, 's-post-summary')
+    for post_summary in post_summaries:
+        title = post_summary.find_element(By.CLASS_NAME, 's-post-summary--content-title').text
+        link_element = post_summary.find_element(By.TAG_NAME, 'a')
+        link = "https://stackoverflow.com" + link_element.get_attribute('href')
+        summary = post_summary.find_element(By.CLASS_NAME, 's-post-summary--content-excerpt').text
+        tags = [tag.text for tag in post_summary.find_elements(By.CLASS_NAME, 'post-tag')]
+        author_element = post_summary.find_element(By.CSS_SELECTOR, 'div.s-user-card__minimal div.s-user-card--info div.s-user-card--link a')
+        author = author_element.text
+        date = post_summary.find_element(By.CLASS_NAME, 'relativetime').get_attribute('title')
         questions.append({
             'title': title,
             'link': link,
@@ -104,20 +42,16 @@ def get_questions_from_page(soup):
         })
     return questions
 
-"""
-Méthode pour récupérer les questions de toutes les pages
-"""
+def get_number_of_pages(driver):
+    base_url = "https://stackoverflow.com/questions?tab=newest&page=1"
+    fetch_page(driver, base_url)  # Load the page to get the page count
+    page_elements = driver.find_elements(By.CSS_SELECTOR, 'a.s-pagination--item')
+    if page_elements:
+        return int(page_elements[-2].text.strip())  # Get the second to last element which is the last page number
+    return 1
 
-def get_questions(driver, number_of_pages):
+def get_questions_for_page(driver, page_number):
     base_url = "https://stackoverflow.com/questions?tab=newest&page="
-    all_questions = []
-
-    for page in range(1, number_of_pages + 1):
-        print(f"Scraping page {page}...")
-        page_url = base_url + str(page)
-        page_content = fetch_page(driver, page_url)
-        soup = BeautifulSoup(page_content, 'html.parser')
-        questions = get_questions_from_page(soup)
-        all_questions.extend(questions)
-    
-    return all_questions
+    page_url = base_url + str(page_number)
+    fetch_page(driver, page_url)
+    return get_questions_from_page(driver)
