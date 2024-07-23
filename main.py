@@ -1,63 +1,56 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from bdd import get_database
-from scrap_beautifulsoup import get_questions as get_questions_bs
-from scrap_selenium import get_questions as get_questions_selenium, setup_driver
-from multiprocessing.pool import ThreadPool
 
-"""
-Méthode pour scraper les données et les insérer dans la base de données
-"""
-def scrap_data():
+def main():
     """
-    On demande à l'utilisateur de choisir la méthode de scraping
+    Fonction principale qui demande à l'utilisateur de choisir la méthode de scraping
+    (BeautifulSoup ou Selenium), et exécute la fonction de scraping correspondante.
     """
-    method = input("Do you want to use Selenium or BeautifulSoup for scraping? (1/2): ").strip().lower()
-    if method not in ["1", "2"]:
-        print("Invalid choice. Please select '1' or '2'.")
-        return
-    
-    number_of_pages = int(input("How many pages do you want to scrape? "))
-    
-    """
-    On récupère les questions
-    """
-    if method == "selenium":
-        driver = setup_driver()
-        questions = get_questions_selenium(driver, number_of_pages)
-        driver.quit()
-    else:
-        questions = get_questions_bs(number_of_pages)
-        
-    """"
-    Boucle de multithreading pour scraper les questions en parallèle
-    """
-    if method == "2":
-        with ThreadPool(10) as pool:
-            questions_list = pool.map(get_questions_bs, range(1, number_of_pages + 1))
-            pool.close()
-    else:
-        with ThreadPool(10) as pool:
-            questions_list = pool.map(get_questions_selenium, range(1, number_of_pages + 1))
-            pool.close()
-            
-    """
-    Flatten the list of lists
-    """
-    questions = [question for sublist in questions_list for question in sublist]
+    print("Choisissez la méthode de scraping :")
+    print("1: BeautifulSoup")
+    print("2: Selenium")
 
+    method = input("Entrez votre choix (1 ou 2) : ").strip()
+
+    if method == "1":
+        from scrap_beautifulsoup import scrape_page as scrape_page_bs
+        scrape_pages(scrape_page_bs)
+    elif method == "2":
+        from scrap_selenium import scrape_page as scrape_page_selenium, ignore_selenium_log
+        ignore_selenium_log()
+        scrape_pages(scrape_page_selenium)
+    else:
+        print("Choix invalide. Veuillez sélectionner '1' ou '2'.")
+
+def scrape_pages(scrape_page, number_of_pages=1, max_workers=4):
     """
-    On se connecte à la base de données
+    Exécute le scraping des pages spécifiées en utilisant des threads, 
+    puis insère les questions récupérées dans la base de données.
     """
+    number_of_pages = int(input("Combien de pages voulez-vous scraper ? "))
+    pages = range(1, number_of_pages + 1)
+
+    questions = []
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_page = {
+            executor.submit(scrape_page, page): page
+            for page in pages
+        }
+
+        for future in as_completed(future_to_page):
+            page = future_to_page[future]
+            try:
+                page_questions = future.result()
+                questions.extend(page_questions)
+            except Exception as exc:
+                print(f"La page {page} a généré une exception : {exc}")
+
     dbname = get_database()
     collection = dbname['questions']
-    """
-    On supprime les anciennes questions de la base de données
-    """
     collection.delete_many({})
-    """
-    On insère les questions dans la base de données
-    """
     collection.insert_many(questions)
-    print(f"Inserted {len(questions)} questions into the database.")
+    print(f"{len(questions)} questions insérées dans la base de données.")
 
 if __name__ == "__main__":
-    scrap_data()
+    main()

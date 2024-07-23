@@ -1,21 +1,22 @@
 import requests
 from bs4 import BeautifulSoup
+from bdd import get_database
 
 def fetch_page(url):
+    """
+    Télécharge le contenu de la page à partir de l'URL donnée.
+    """
     response = requests.get(url)
     if response.status_code == 200:
         return response.content
     else:
-        print(f"Request failed with status code {response.status_code}")
+        print(f"La requête a échoué avec le code de statut {response.status_code}")
         return None
 
-def get_number_of_pages(soup):
-    pages = soup.find_all('a', class_='s-pagination--item js-pagination-item')
-    if pages:
-        return int(pages[-2].text.strip())
-    return 1
-
 def get_questions_from_page(soup):
+    """
+    Extrait les questions d'une page HTML analysée par BeautifulSoup.
+    """
     questions = []
     for question in soup.find_all('div', class_='s-post-summary'):
         title = question.find('h3', class_='s-post-summary--content-title')
@@ -40,6 +41,9 @@ def get_questions_from_page(soup):
     return questions
 
 def get_questions_for_page(page_number):
+    """
+    Récupère les questions pour un numéro de page donné.
+    """
     base_url = "https://stackoverflow.com/questions?tab=newest&page="
     page_url = base_url + str(page_number)
     page_content = fetch_page(page_url)
@@ -48,8 +52,8 @@ def get_questions_for_page(page_number):
         return get_questions_from_page(soup)
     return []
 
-def get_number_of_pages(soup):
-    pages = soup.find_all('a', class_='s-pagination--item js-pagination-item')
-    if pages:
-        return int(pages[-2].text.strip())
-    return 1
+def scrape_page(page_number):
+    """
+    Fonction de scraping pour une page donnée, utilisée pour la gestion des threads.
+    """
+    return get_questions_for_page(page_number)
