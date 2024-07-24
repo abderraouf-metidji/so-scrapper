@@ -25,7 +25,7 @@ def get_questions_from_page(soup):
         link = "https://stackoverflow.com" + link['href'] if link else None
         summary = question.find('div', class_='s-post-summary--content-excerpt')
         summary = summary.text.strip() if summary else None
-        tags = [tag.text for tag in question.find_all('a', class_='post-tag')] or None
+        tags = [tag.text for tag in question.find_all('a', class_='s-post-tag')] or None
         author_element = question.select_one('div.s-user-card__minimal div.s-user-card--info div.s-user-card--link a')
         author = author_element.text.strip() if author_element else None
         date = question.find('span', class_='relativetime')
